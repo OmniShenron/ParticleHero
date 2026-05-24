@@ -1,0 +1,20 @@
+{
+  "name": "particle-hero",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "gsap": "^3.12.5",
+    "postprocessing": "^6.36.0",
+    "stats.js": "^0.17.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.2"
+  }
+}
