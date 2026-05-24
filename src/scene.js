@@ -10,19 +10,21 @@ export function createScene() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 0.85;   // pulled down — prevents overall overexposure
 
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(50, W / H, 0.01, 100);
   camera.position.set(0, 0, 3.5);
 
-  // Bloom
+  // Cinematic bloom — tight threshold so only genuinely bright pixels bloom
+  // Low intensity so face stays defined, not washed out
   const bloom = new BloomEffect({
-    luminanceThreshold: 0.05,
-    luminanceSmoothing: 0.75,
-    intensity: 3.2,
+    luminanceThreshold: 0.28,   // was 0.05 — only very bright pixels bloom
+    luminanceSmoothing: 0.55,
+    intensity: 1.1,             // was 3.2 — subtle halo, not nuclear explosion
   });
+
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new EffectPass(camera, bloom));
