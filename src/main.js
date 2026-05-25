@@ -4,9 +4,18 @@ import { loadFace }                  from './face.js';
 import { initMouse, getMouseWorld }  from './mouse.js';
 import { setupScroll }               from './scroll.js';
 
+// ── Zone map ────────────────────────────────────────────────────────────────
+//   TOP    → Neural Cascade      (cursor y > 0, |y| > |x|)
+//   LEFT   → Chromatic Dispersion (cursor x < 0, |x| > |y|)
+//   RIGHT  → Gravitational Lensing(cursor x > 0, |x| > |y|)
+//   BOTTOM → Ferrofluid Spikes    (cursor y < 0, |y| > |x|)
+// ─────────────────────────────────────────────────────────────────────────────
+const GHOST    = 0.0;   // effects fully off when not in zone
+const LERP_ON  = 0.08;
+const LERP_OFF = 0.03;
+
 async function main() {
   const { scene, camera, composer, bloom } = createScene();
-
   const face = await loadFace(scene);
 
   const loader = document.getElementById('loader');
@@ -20,14 +29,11 @@ async function main() {
   initMouse();
   setupScroll({ camera, bloom, face });
 
-  // ── Hover detection — is cursor over the face? ────────────────────────────
-  // Face fills most of the viewport; bounding radius in world units ≈ 1.45
-  // We read the already-smoothed mouse world position each frame for accuracy.
-  const FACE_RADIUS = 1.55;   // slightly generous so edge of face still triggers
-  let hoverTarget   = 0;      // 0 = off face, 1 = on face
-
+  const FACE_RADIUS = 1.55;
+  let hoverTarget   = 0;
   window.addEventListener('mouseleave', () => { hoverTarget = 0; });
-  window.addEventListener('mouseenter', () => { /* re-evaluated each tick */ });
+
+  let wNeural = 0, wChromatic = 0, wLensing = 0, wFerro = 0;
 
   let prev = performance.now(), t = 0;
   let targetRotX = 0, targetRotY = 0;
@@ -40,23 +46,80 @@ async function main() {
 
     const mouse = getMouseWorld(camera);
 
-    // Detect hover: cursor within face bounding circle
-    const distFromCenter = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
-    hoverTarget = distFromCenter < FACE_RADIUS ? 1 : 0;
+    // ── Global hover (use world dist — face center is always near origin) ──
+    const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
+    hoverTarget = dist < FACE_RADIUS ? 1 : 0;
+    const lerpH = hoverTarget > face.mat.uniforms.uHover.value ? 0.08 : 0.025;
+    face.mat.uniforms.uHover.value += (hoverTarget - face.mat.uniforms.uHover.value) * lerpH;
+    const H = face.mat.uniforms.uHover.value;
 
-    // Smooth lerp — quick onset (0.10), lazy release (0.04) for trailing lensing
-    const lerpSpeed = hoverTarget > face.mat.uniforms.uHover.value ? 0.10 : 0.04;
-    face.mat.uniforms.uHover.value +=
-      (hoverTarget - face.mat.uniforms.uHover.value) * lerpSpeed;
+    // ── Zone weights — use raw world mouse for direction (pre-tilt) ───────
+    const nx  = mouse.x / 1.55;
+    const ny  = mouse.y / 1.00;
 
-    face.mat.uniforms.uTime.value  = t;
-    face.mat.uniforms.uMouse.value.copy(mouse);
+    const absX = Math.abs(nx);
+    const absY = Math.abs(ny);
 
-    // Mouse-driven tilt
+    let tN = GHOST, tC = GHOST, tL = GHOST, tF = GHOST;
+
+    if (H > 0.05) {
+      // Soft blend on diagonals: within 25° of 45° both adjacent zones share
+      const blend = 0.25;
+
+      if (absX >= absY) {
+        // Left / Right dominates
+        const purity = Math.min((absX - absY) / blend, 1.0);
+        if (nx > 0) {
+          tL = purity;
+          // Share with vertical neighbour on diagonal
+          tN = ny > 0 ? (1.0 - purity) * 0.8 : GHOST;
+          tF = ny < 0 ? (1.0 - purity) * 0.8 : GHOST;
+        } else {
+          tC = purity;
+          tN = ny > 0 ? (1.0 - purity) * 0.8 : GHOST;
+          tF = ny < 0 ? (1.0 - purity) * 0.8 : GHOST;
+        }
+      } else {
+        // Top / Bottom dominates
+        const purity = Math.min((absY - absX) / blend, 1.0);
+        if (ny > 0) {
+          tN = purity;
+          tL = nx > 0 ? (1.0 - purity) * 0.8 : GHOST;
+          tC = nx < 0 ? (1.0 - purity) * 0.8 : GHOST;
+        } else {
+          tF = purity;
+          tL = nx > 0 ? (1.0 - purity) * 0.8 : GHOST;
+          tC = nx < 0 ? (1.0 - purity) * 0.8 : GHOST;
+        }
+      }
+    }
+
+    // Smooth lerp
+    const lw = (c, t2) => c + (t2 - c) * (t2 > c ? LERP_ON : LERP_OFF);
+    wNeural    = lw(wNeural,    tN);
+    wChromatic = lw(wChromatic, tC);
+    wLensing   = lw(wLensing,   tL);
+    wFerro     = lw(wFerro,     tF);
+
+    face.mat.uniforms.uWneural.value    = wNeural;
+    face.mat.uniforms.uWchromatic.value = wChromatic;
+    face.mat.uniforms.uWlensing.value   = wLensing;
+    face.mat.uniforms.uWferro.value     = wFerro;
+
+    face.mat.uniforms.uTime.value = t;
+
+    // Apply tilt BEFORE computing local mouse so worldToLocal uses current matrix
     targetRotY =  mouse.x * 0.28;
     targetRotX = -mouse.y * 0.18;
     face.mesh.rotation.y += (targetRotY - face.mesh.rotation.y) * 0.055;
     face.mesh.rotation.x += (targetRotX - face.mesh.rotation.x) * 0.055;
+    face.mesh.updateMatrixWorld();
+
+    // Convert world mouse → local object space so the shader effect
+    // stays fixed relative to the face surface regardless of tilt
+    const localMouse = mouse.clone();
+    face.mesh.worldToLocal(localMouse);
+    face.mat.uniforms.uMouse.value.copy(localMouse);
 
     composer.render();
   }

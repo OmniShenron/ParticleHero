@@ -7,6 +7,8 @@ body {
   cursor: none;
 }
 
+* { cursor: none !important; }
+
 #hero {
   position: relative;
   width: 100vw;
@@ -22,7 +24,7 @@ body {
   height: 100% !important;
 }
 
-/* ── Loading screen ─────────────────────────────────────────────────────── */
+/* ── Loading screen ──────────────────────────────────────────────────────── */
 #loader {
   position: fixed;
   inset: 0;
@@ -65,22 +67,18 @@ body {
   50%      { transform: scale(1.3); opacity: 1.0; }
 }
 
-/* ── Custom cursor ───────────────────────────────────────────────────────── */
-#cur-dot, #cur-ring {
+/* ── Custom cursor — single dot ─────────────────────────────────────────── */
+#cur-dot {
   position: fixed;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   pointer-events: none;
   z-index: 9999;
   transform: translate(-50%, -50%);
-}
-#cur-dot {
-  width: 7px; height: 7px;
   background: #00ddff;
-  box-shadow: 0 0 10px #00ddff, 0 0 22px rgba(0,220,255,.5);
-}
-#cur-ring {
-  width: 38px; height: 38px;
-  border: 1.5px solid rgba(0, 200, 255, 0.45);
+  box-shadow: 0 0 8px #00ddff, 0 0 20px rgba(0,220,255,0.6), 0 0 40px rgba(0,200,255,0.2);
+  transition: transform 0.08s ease, background 0.15s ease;
 }
 
 #below { background: #000; min-height: 100vh; }
